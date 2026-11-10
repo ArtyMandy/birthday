@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Für dich ♥</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Nunito:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg1: #fff1f2; --bg2: #ffe4e6; --card: #ffffffcc; --text: #4a2c35;
+    --muted: #8c6470; --accent: #e11d48; --accent-hover: #be123c; --err: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: "Nunito", system-ui, sans-serif; color: var(--text);
+    background: radial-gradient(circle at 20% 10%, var(--bg2), var(--bg1) 60%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px 16px; overflow-x: hidden;
+  }
+  .hearts { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  .hearts span {
+    position: absolute; bottom: -40px; color: var(--accent); opacity: .25;
+    animation: rise linear infinite;
+  }
+  @keyframes rise { to { transform: translateY(-115vh) rotate(25deg); } }
+  @media (prefers-reduced-motion: reduce) { .hearts { display: none; } }
+  .card {
+    position: relative; z-index: 1; width: 100%; max-width: 440px; text-align: center;
+    background: var(--card); backdrop-filter: blur(6px); border-radius: 24px;
+    padding: 40px 28px; box-shadow: 0 20px 60px -20px #e11d4855;
+  }
+  .card.wide { max-width: 960px; padding: 28px 20px; }
+  h1 { font-family: "Dancing Script", cursive; font-size: 2.6rem; margin: 0 0 8px; color: var(--accent); line-height: 1.15; }
+  p { color: var(--muted); margin: 0 0 24px; line-height: 1.5; }
+  form { display: flex; flex-direction: column; gap: 12px; }
+  input {
+    font: inherit; padding: 14px 16px; border-radius: 14px; border: 2px solid #fecdd3;
+    background: #fff; color: var(--text); text-align: center; font-size: 1.05rem;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    font: inherit; font-weight: 600; padding: 14px; border: 0; border-radius: 14px;
+    background: var(--accent); color: #fff; cursor: pointer; font-size: 1.05rem;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: .6; cursor: wait; }
+  .msg { min-height: 1.4em; margin-top: 10px; font-size: .95rem; }
+  .msg.err { color: var(--err); }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  video { width: 100%; border-radius: 16px; background: #000; display: block; margin-top: 8px; }
+  .letter { white-space: pre-wrap; color: var(--text); font-size: 1.05rem; margin: 20px auto 0; max-width: 680px; text-align: left; line-height: 1.6; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="hearts" aria-hidden="true"></div>
+
+<main class="card" id="lock">
+  <h1>Für dich ♥</h1>
+  <p>Hier wartet eine kleine Überraschung.<br>Gib das Passwort ein, um sie zu öffnen.</p>
+  <form id="form" autocomplete="off">
+    <input id="pw" type="password" placeholder="Passwort" aria-label="Passwort" required autofocus>
+    <button id="btn" type="submit">Öffnen</button>
+  </form>
+  <div class="msg" id="msg" role="status"></div>
+</main>
+
+<main class="card wide hidden" id="content">
+  <h1 id="title"></h1>
+  <video id="video" controls playsinline></video>
+  <div class="letter" id="letter"></div>
+</main>
+
+<script>
+// Datei, die mit verschluesseln.html erzeugt wurde.
+const ENCRYPTED_FILE = "video.enc";
+const ITERATIONS = 2000000;
+
+// Herzen im Hintergrund
+(() => {
+  const box = document.querySelector(".hearts");
+  for (let i = 0; i < 18; i++) {
+    const s = document.createElement("span");
+    s.textContent = "♥";
+    s.style.left = Math.random() * 100 + "vw";
+    s.style.fontSize = 12 + Math.random() * 26 + "px";
+    s.style.animationDuration = 9 + Math.random() * 12 + "s";
+    s.style.animationDelay = -Math.random() * 20 + "s";
+    box.appendChild(s);
+  }
+})();
+
+const $ = (id) => document.getElementById(id);
+let encrypted = null;
+
+async function loadEncrypted(onProgress) {
+  if (encrypted) return encrypted;
+  const res = await fetch(ENCRYPTED_FILE, { cache: "force-cache" });
+  if (!res.ok) throw new Error("Datei nicht gefunden");
+  const total = +res.headers.get("Content-Length") || 0;
+  const reader = res.body.getReader();
+  const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (total) onProgress(Math.round(got / total * 100));
+  }
+  const buf = new Uint8Array(got); let o = 0;
+  for (const c of chunks) { buf.set(c, o); o += c.length; }
+  return (encrypted = buf);
+}
+
+async function decrypt(buf, password) {
+  // Format: "BDAY1"(5) | salt(16) | iv(12) | AES-GCM-Ciphertext
+  const magic = new TextDecoder().decode(buf.slice(0, 5));
+  if (magic !== "BDAY1") throw new Error("Unbekanntes Format");
+  const salt = buf.slice(5, 21), iv = buf.slice(21, 33), data = buf.subarray(33);
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data));
+  // Inhalt: Länge(4, big endian) | JSON-Metadaten | Videodaten
+  const len = new DataView(plain.buffer).getUint32(0);
+  const meta = JSON.parse(new TextDecoder().decode(plain.subarray(4, 4 + len)));
+  const video = new Blob([plain.subarray(4 + len)], { type: meta.mime || "video/mp4" });
+  return { meta, video };
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("btn"), msg = $("msg");
+  btn.disabled = true; msg.className = "msg"; msg.textContent = "Lädt …";
+  try {
+    const buf = await loadEncrypted((p) => (msg.textContent = `Lädt … ${p} %`));
+    msg.textContent = "Wird geöffnet …";
+    let result;
+    try { result = await decrypt(buf, $("pw").value); }
+    catch { throw new Error("pw"); }
+    const { meta, video } = result;
+    $("title").textContent = meta.title || "Alles Liebe zum Geburtstag!";
+    $("letter").textContent = meta.message || "";
+    $("letter").classList.toggle("hidden", !meta.message);
+    $("video").src = URL.createObjectURL(video);
+    $("lock").classList.add("hidden");
+    $("content").classList.remove("hidden");
+    document.title = meta.title || "Alles Liebe ♥";
+  } catch (err) {
+    msg.className = "msg err";
+    msg.textContent = err.message === "pw" ? "Das Passwort stimmt leider nicht." : "Etwas ist schiefgelaufen: " + err.message;
+    $("lock").classList.remove("shake"); void $("lock").offsetWidth; $("lock").classList.add("shake");
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Unverschlüsselte Originalvideos niemals committen
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.avi
+*.mkv

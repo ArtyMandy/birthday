@@ -1,0 +1,42 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nur der Ordner site/ wird veröffentlicht (index.html + video.enc).
+      - name: Check encrypted video size
+        run: |
+          size=$(stat -c%s site/video.enc)
+          echo "video.enc: $((size / 1048576)) MB"
+          head -c 5 site/video.enc | grep -q BDAY1 || { echo "::error::site/video.enc ist nicht verschlüsselt"; exit 1; }
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
